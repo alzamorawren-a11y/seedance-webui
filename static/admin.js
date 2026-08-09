@@ -383,6 +383,48 @@ async function loadSettings() {
   } catch (e) {}
 }
 
+$('btn-backup').addEventListener('click', async () => {
+  try {
+    const r = await apiFetch('/api/admin/backup', { method: 'GET' });
+    if (!r.ok) { toast('备份失败: ' + r.status, false); return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="([^"]+)"/);
+    a.download = m ? m[1] : 'seedance-backup.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+    toast('备份已下载 ✅');
+  } catch (e) { toast('备份失败: ' + e.message, false); }
+});
+
+$('btn-restore').addEventListener('click', () => {
+  $('restore-msg').textContent = '';
+  $('restore-file').click();
+});
+
+$('restore-file').addEventListener('change', async () => {
+  const file = $('restore-file').files[0];
+  if (!file) return;
+  if (!confirm('恢复将覆盖当前全部数据（用户/积分/任务/素材/视频），确定继续？')) { $('restore-file').value = ''; return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  $('restore-msg').textContent = '恢复中…';
+  try {
+    const d = await apiJson('/api/admin/restore', { method: 'POST', body: fd });
+    $('restore-msg').textContent = '✅ 恢复完成，正在刷新…';
+    toast('恢复完成 ✅');
+    await new Promise(r => setTimeout(r, 800));
+    location.reload();
+  } catch (e) {
+    $('restore-msg').textContent = '';
+    toast('恢复失败: ' + e.message, false);
+  } finally {
+    $('restore-file').value = '';
+  }
+});
+
 $('btn-save-settings').addEventListener('click', async () => {
   const fd = new FormData();
   fd.append('retention_days', $('set-retention').value);

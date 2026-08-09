@@ -14,7 +14,8 @@ import requests
 import uvicorn
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, UploadFile, File, Form, Header, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+import io
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -430,6 +431,7 @@ def me(_auth: dict = Depends(require_user)):
         "username": _auth["username"],
         "points": round(float(_auth["points"]), 1),
         "ratios": RATIOS,
+        "retention_days": int(get_setting("retention_days", "30") or 30),
     }
 
 
@@ -1024,6 +1026,73 @@ def admin_keep_task(task_id: str, keep: str = Form("1"), _auth: dict = Depends(r
     _audit(_auth, "keep_task", f"任务 {task_id} 保留状态 -> {keep}")
     return {"ok": True}
 
+
+
+@app.get("/api/admin/backup")
+def admin_backup(_auth: dict = Depends(require_admin)):
+    """一键备份：数据库 + 密钥 + 上传素材 + 本地视频，打包 zip 下载"""
+    import zipfile
+    buf = io.BytesIO()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for d in (DATA_DIR, UPLOAD_DIR, DOWNLOADS_DIR):
+            for f in d.iterdir():
+                if f.is_file():
+                    z.write(f, f"{d.name}/{f.name}")
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="seedance-backup-{stamp}.zip"'})
+
+
+@app.post("/api/admin/restore")
+def admin_restore(file: UploadFile = File(...), _auth: dict = Depends(require_admin)):
+    """从备份 zip 恢复（覆盖当前数据/素材/视频）"""
+    import zipfile, io as _io
+    try:
+        data = file.file.read()
+        z = zipfile.ZipFile(_io.BytesIO(data))
+    except Exception:
+        return JSONResponse({"ok": False, "error": "不是有效的备份文件"}, status_code=400)
+    names = z.namelist()
+    has_db = any(n.startswith("data/") for n in names)
+    if not has_db:
+        return JSONResponse({"ok": False, "error": "备份文件缺少数据库（data/）"}, status_code=400)
+    # 校验路径安全
+    allowed = {"data/", "uploads/", "downloads/"}
+    for n in names:
+        prefix = n.split("/", 1)[0] + "/"
+        if prefix not in allowed or ".." in n:
+            return JSONResponse({"ok": False, "error": f"备份包含非法路径: {n}"}, status_code=400)
+    # 写入临时目录后整体替换（避免半途损坏）
+    tmp = BASE_DIR / f".restore_tmp_{time.time()}"
+    tmp.mkdir()
+    try:
+        for n in names:
+            if n.endswith("/"):
+                continue
+            target = (tmp / n).parent
+            target.mkdir(parents=True, exist_ok=True)
+            with z.open(n) as src, (tmp / n).open("wb") as dst:
+                dst.write(src.read())
+        # 覆盖正式目录（备份里有密钥则一并替换，否则保留现有密钥以维持加密数据可读）
+        replace_key = (tmp / "data" / ".secret_key").exists()
+        for d in (DATA_DIR, UPLOAD_DIR, DOWNLOADS_DIR):
+            for f in d.iterdir():
+                if f.is_file() and (f.name != ".secret_key" or replace_key):
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+        for sub in ("data", "uploads", "downloads"):
+            src_dir = tmp / sub
+            if src_dir.exists():
+                for f in src_dir.iterdir():
+                    if f.is_file():
+                        shutil.copy2(f, BASE_DIR / sub / f.name)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    _audit(_auth, "restore", "从备份恢复数据")
+    return {"ok": True}
 
 @app.post("/api/admin/tasks/delete")
 def admin_delete_task(task_id: str = Form(...), _auth: dict = Depends(require_admin)):

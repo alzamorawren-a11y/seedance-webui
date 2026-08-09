@@ -83,6 +83,10 @@ function buildDurationOptions() {
 async function loadMe() {
   try {
     const d = await apiJson('/api/me');
+    if (d.retention_days) {
+      const el = $('retention-hint');
+      if (el) el.textContent = '视频默认保留 ' + d.retention_days + ' 天，超期自动清理，重要视频请及时下载；平台链接长期有效。';
+    }
     $('user-name').textContent = d.username;
     $('points').textContent = d.points;
     RATIOS = d.ratios || [];
