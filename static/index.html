@@ -1,0 +1,219 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>Seedance 视频工作台</title>
+<style>
+:root { --bg:#0f1115; --card:#1a1d24; --card2:#22262f; --line:#2c313c; --text:#e6e9ef; --muted:#9aa3b2; --accent:#e11d48; --accent2:#3b82f6; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif; min-height:100vh; }
+.wrap { max-width:1100px; margin:0 auto; padding:24px 16px 80px; }
+header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+header h1 { font-size:22px; font-weight:700; }
+header h1 span { color:var(--accent); }
+.hd-right { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.points-chip { display:flex; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--line); padding:5px 14px; border-radius:20px; font-size:13px; }
+.points-chip b { color:var(--warn); font-size:15px; }
+.user-chip { display:flex; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--line); padding:5px 12px; border-radius:20px; font-size:13px; color:var(--muted); }
+.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:14px; transition:.15s; font-family:inherit; }
+.btn:hover { border-color:var(--accent); }
+.btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+.btn-primary:hover { filter:brightness(1.1); }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+.card h2 { font-size:15px; margin-bottom:12px; color:var(--muted); font-weight:600; }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.row label { font-size:13px; color:var(--muted); min-width:64px; }
+select, input[type=text], input[type=password], textarea { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 12px; font-size:14px; width:100%; font-family:inherit; }
+select:focus, input:focus, textarea:focus { outline:none; border-color:var(--accent2); }
+textarea { resize:vertical; min-height:96px; line-height:1.6; }
+.field { flex:1; min-width:140px; }
+.tabs { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.tab { padding:8px 16px; border-radius:8px; background:var(--card2); border:1px solid var(--line); cursor:pointer; font-size:14px; color:var(--muted); }
+.tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+.tab.hidden { display:none; }
+.materials { margin-top:10px; }
+.mat-input { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+.mat-input input { flex:1; min-width:160px; }
+.mat-list { display:flex; flex-wrap:wrap; gap:8px; }
+.mat-item { background:var(--card2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:13px; display:flex; align-items:center; gap:8px; }
+.mat-item img { width:44px; height:44px; object-fit:cover; border-radius:6px; }
+.mat-item .idx { background:var(--accent); color:#fff; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+.mat-item button { background:none; border:none; color:var(--err); cursor:pointer; font-size:16px; }
+.fl-frame { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
+.fl-box { flex:1; min-width:220px; }
+.fl-box .mat-list { margin-top:8px; }
+.hint { font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6; }
+.cost { font-size:13px; color:var(--warn); margin-left:auto; }
+.tasks { display:grid; gap:12px; }
+.task { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+.task-top { display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap; }
+.task-model { font-size:13px; color:var(--muted); }
+.status { padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+.st-pending { background:#3b3f4a; color:var(--muted); }
+.st-running { background:#1e3a5f; color:#60a5fa; }
+.st-succeeded { background:#14351f; color:var(--ok); }
+.st-failed, .st-error { background:#3d1a1a; color:var(--err); }
+.task-prompt { margin-top:8px; font-size:13px; color:var(--muted); line-height:1.5; word-break:break-all; }
+.task-result { margin-top:10px; }
+.task-result video { width:100%; max-width:480px; border-radius:8px; background:#000; display:block; }
+.task-result img.cover { width:100%; max-width:320px; border-radius:8px; display:block; }
+.task-err { margin-top:8px; color:var(--err); font-size:13px; word-break:break-all; }
+.task-meta { margin-top:8px; font-size:12px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+.task-meta a { color:var(--accent2); }
+.modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:100; }
+.modal.open { display:flex; }
+.modal-card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:min(480px,92vw); }
+.modal-card h3 { margin-bottom:12px; }
+.empty { color:var(--muted); text-align:center; padding:24px 0; font-size:14px; }
+.toast { position:fixed; top:16px; left:50%; transform:translateX(-50%) translateY(-80px); background:#22262f; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 18px; font-size:14px; z-index:200; transition:.25s; opacity:0; pointer-events:none; max-width:90vw; }
+.toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+.toast.ok { border-color:var(--ok); }
+.toast.err { border-color:var(--err); }
+.login-view { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:300; }
+.login-card { width:min(400px,92vw); background:var(--card); border:1px solid var(--line); border-radius:16px; padding:32px 28px; }
+.login-card h2 { text-align:center; margin-bottom:6px; font-size:22px; }
+.login-card .sub { text-align:center; color:var(--muted); font-size:13px; margin-bottom:22px; }
+.login-card label { font-size:13px; color:var(--muted); display:block; margin:12px 0 6px; }
+.login-card .btn-primary { width:100%; margin-top:20px; padding:11px; font-size:15px; }
+.login-err { color:var(--err); font-size:13px; min-height:18px; margin-top:10px; text-align:center; }
+.at-picker { position:absolute; left:0; right:0; top:100%; margin-top:4px; background:var(--card2); border:1px solid var(--line); border-radius:10px; z-index:50; max-height:200px; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.at-picker .ap-item { display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line); }
+.at-picker .ap-item:hover { background:var(--accent); }
+.at-picker .ap-item img { width:34px; height:34px; object-fit:cover; border-radius:6px; }
+.at-picker .ap-item .idx { background:var(--accent); color:#fff; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+footer { margin-top:20px; text-align:center; color:var(--muted); font-size:12px; line-height:1.8; }
+@media (max-width:640px) { .row label { min-width:100%; } }
+</style>
+</head>
+<body>
+
+<!-- 登录页 -->
+<div class="login-view" id="login-view">
+  <div class="login-card">
+    <h2>🎬 Seedance 视频工作台</h2>
+    <div class="sub">请登录后使用</div>
+    <label>账号</label>
+    <input type="text" id="login-username" placeholder="请输入账号" autocomplete="username">
+    <label>密码</label>
+    <input type="password" id="login-password" placeholder="请输入密码" autocomplete="current-password">
+    <button class="btn btn-primary" id="login-btn">登 录</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="app-view" style="display:none">
+<div class="wrap">
+  <header>
+    <h1>🎬 Seedance <span>视频工作台</span></h1>
+    <div class="hd-right">
+      <span class="points-chip">⚡ 积分 <b id="points">0</b></span>
+      <span class="user-chip" id="user-name">-</span>
+      
+      <button class="btn" id="btn-change-pass">修改密码</button>
+      <button class="btn" id="btn-logout">退出</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="tabs" id="tabs">
+      <div class="tab active" id="tab-text" data-mode="text" style="display:none">✏️ 文生视频</div>
+      <div class="tab" id="tab-multi" data-mode="multi" style="display:none">🖼️ 多模态参考</div>
+      <div class="tab" id="tab-fl" data-mode="first_last" style="display:none">🎞️ 首尾帧</div>
+    </div>
+
+    <div class="row">
+      <div class="field"><label>模型</label><select id="model"></select></div>
+      <div class="field"><label>时长</label><select id="duration"></select></div>
+
+      <div class="field"><label>比例</label><select id="ratio"><option value="">默认</option></select></div>
+    </div>
+
+    <div class="row">
+      <label style="align-self:flex-start">提示词</label>
+      <div style="flex:1;position:relative">
+        <textarea id="prompt" placeholder="描述你想生成的视频内容… 上传素材后输入 @ 可引用图片"></textarea>
+        <div class="at-picker" id="at-picker" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- 多模态参考素材 -->
+    <div class="materials" id="materials" style="display:none">
+      <div class="mat-input">
+        <input type="text" id="mat-url" placeholder="粘贴图片/视频/音频的公网 URL（如 https://xxx.com/1.png）">
+        <button class="btn" onclick="addMaterialUrl()">添加</button>
+        <button class="btn" id="mat-upload-btn" onclick="document.getElementById('mat-file').click()">上传图片</button>
+        <input type="file" id="mat-file" accept="image/*" style="display:none" onchange="uploadMaterial(this)">
+      </div>
+      <div class="mat-list" id="mat-list"></div>
+      <div class="hint">💡 素材自动编号为 @1、@2…，在提示词里写 @1 即可引用该素材。<br>⚠️ 平台需要能访问素材 URL：优先用公网图床链接。</div>
+    </div>
+
+    <!-- 首尾帧 -->
+    <div class="fl-frame" id="fl-frame" style="display:none">
+      <div class="fl-box">
+        <label style="font-size:13px;color:var(--muted)">首帧图片</label>
+        <div class="mat-input">
+          <input type="text" id="fl-first-url" placeholder="首帧图片 URL（或上传）"><button class="btn" onclick="setFirstFrameUrl()">确定</button> <button class="btn" id="fl-first-up" onclick="document.getElementById('fl-first-file').click()">上传</button>
+          <input type="file" id="fl-first-file" accept="image/*" style="display:none" onchange="uploadFirstFrame(this)">
+        </div>
+        <div class="mat-list" id="fl-first-list"></div>
+      </div>
+      <div class="fl-box">
+        <label style="font-size:13px;color:var(--muted)">尾帧图片</label>
+        <div class="mat-input">
+          <input type="text" id="fl-last-url" placeholder="尾帧图片 URL（或上传）"><button class="btn" onclick="setLastFrameUrl()">确定</button> <button class="btn" id="fl-last-up" onclick="document.getElementById('fl-last-file').click()">上传</button>
+          <input type="file" id="fl-last-file" accept="image/*" style="display:none" onchange="uploadLastFrame(this)">
+        </div>
+        <div class="mat-list" id="fl-last-list"></div>
+      </div>
+      <div class="hint" style="flex-basis:100%">💡 首尾帧模式下，生成的视频将从首帧画面过渡到尾帧画面。两张图片会以 @ 引用自动附加到提示词中。</div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <button class="btn btn-primary" id="gen-btn" onclick="generate()" style="min-width:150px">🚀 生成视频</button>
+      <span class="cost" id="cost-hint"></span>
+    </div>
+  </div>
+
+  <div class="card" id="task-center-card">
+    <h2>📋 任务中心 <span style="float:right" id="task-count"></span></h2>
+    <div class="tasks" id="task-list"><div class="empty">暂无任务</div></div>
+  </div>
+
+  <div class="card" id="points-card">
+    <h2>⚡ 积分明细</h2>
+    <div id="points-log-list"><div class="empty">暂无记录</div></div>
+  </div>
+
+  <footer>Seedance 视频工作台 · 支持文生视频 / 多模态参考 / 首尾帧 / 比例选择<br>任务在云端异步生成，生成的视频会自动保存到本地，过期后自动清理。</footer>
+</div>
+</div>
+
+<!-- 改密码弹窗 -->
+<div class="modal" id="pass-modal">
+  <div class="modal-card">
+    <h3>🔒 修改密码</h3>
+    <div style="margin-bottom:6px"><label style="font-size:13px;color:var(--muted)">新密码</label>
+      <input type="password" id="new-pass" placeholder="至少 4 位"></div>
+    <div style="margin-bottom:14px"><label style="font-size:13px;color:var(--muted)">确认密码</label>
+      <input type="password" id="new-pass2" placeholder="再次输入新密码"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" onclick="closePassModal()">取消</button>
+      <button class="btn btn-primary" onclick="savePass()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+window.AUTH = { tokenKey: 'seedance_user_token', loginPath: '/api/login', sessionPath: '/api/session' };
+</script>
+<script src="/static/auth.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
+

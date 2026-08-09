@@ -1,0 +1,249 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>管理后台 · Seedance 视频工作台</title>
+<style>
+:root { --bg:#0f1115; --card:#1a1d24; --card2:#22262f; --line:#2c313c; --text:#e6e9ef; --muted:#9aa3b2; --accent:#e11d48; --accent2:#3b82f6; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif; min-height:100vh; }
+.wrap { max-width:1200px; margin:0 auto; padding:24px 16px 80px; }
+header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+header h1 { font-size:22px; font-weight:700; }
+header h1 span { color:var(--accent); }
+.hd-right { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:14px; transition:.15s; font-family:inherit; }
+.btn:hover { border-color:var(--accent); }
+.btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+.btn-primary:hover { filter:brightness(1.1); }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.btn-danger { background:#3d1a1a; border-color:#7f1d1d; color:var(--err); }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+.card h2 { font-size:15px; margin-bottom:12px; color:var(--muted); font-weight:600; }
+.card h2 .tip { font-weight:400; font-size:12px; color:var(--muted); }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.row label { font-size:13px; color:var(--muted); min-width:80px; }
+select, input[type=text], input[type=password], input[type=number] { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 12px; font-size:14px; width:100%; font-family:inherit; }
+select:focus, input:focus { outline:none; border-color:var(--accent2); }
+.field { flex:1; min-width:140px; }
+.switch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 4px; border-bottom:1px dashed var(--line); }
+.switch-row:last-child { border-bottom:none; }
+.switch-row .desc { font-size:12px; color:var(--muted); margin-top:3px; }
+.switch { position:relative; width:46px; height:26px; flex-shrink:0; }
+.switch input { opacity:0; width:0; height:0; }
+.slider { position:absolute; inset:0; background:var(--card2); border:1px solid var(--line); border-radius:20px; cursor:pointer; transition:.2s; }
+.slider:before { content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:var(--muted); border-radius:50%; transition:.2s; }
+.switch input:checked + .slider { background:var(--accent); border-color:var(--accent); }
+.switch input:checked + .slider:before { transform:translateX(20px); background:#fff; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+th { color:var(--muted); font-weight:600; white-space:nowrap; }
+td input[type=number] { width:100px; padding:6px 8px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; border:1px solid var(--line); color:var(--muted); }
+.badge.ok { color:var(--ok); border-color:var(--ok); }
+.badge.warn { color:var(--warn); border-color:var(--warn); }
+.badge.err { color:var(--err); border-color:var(--err); }
+.empty { color:var(--muted); text-align:center; padding:20px 0; font-size:14px; }
+.task { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; }
+.task .t-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.task .t-user { color:var(--accent2); font-weight:600; font-size:13px; }
+.task .t-sub { font-size:12px; color:var(--muted); margin-top:4px; word-break:break-all; }
+.task .t-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.task video { width:100%; max-width:420px; border-radius:8px; background:#000; display:block; margin-top:8px; }
+.status { padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+.st-pending { background:#3b3f4a; color:var(--muted); }
+.st-running { background:#1e3a5f; color:#60a5fa; }
+.st-succeeded { background:#14351f; color:var(--ok); }
+.st-failed, .st-error { background:#3d1a1a; color:var(--err); }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.stat .n { font-size:24px; font-weight:700; }
+.stat .l { font-size:12px; color:var(--muted); margin-top:2px; }
+.tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.tab { padding:9px 18px; border-radius:8px; background:var(--card2); border:1px solid var(--line); cursor:pointer; font-size:14px; color:var(--muted); }
+.tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+.panel { display:none; }
+.panel.active { display:block; }
+.hint { font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6; }
+.modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:100; }
+.modal.open { display:flex; }
+.modal-card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; width:min(560px,92vw); max-height:86vh; overflow:auto; }
+.modal-card h3 { margin-bottom:12px; }
+.modal-card .keybox { background:var(--card2); border:1px solid var(--line); border-radius:8px; padding:10px; word-break:break-all; font-size:13px; }
+.toast { position:fixed; top:16px; left:50%; transform:translateX(-50%) translateY(-80px); background:#22262f; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 18px; font-size:14px; z-index:200; transition:.25s; opacity:0; pointer-events:none; max-width:90vw; }
+.toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+.toast.ok { border-color:var(--ok); }
+.toast.err { border-color:var(--err); }
+.login-view { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:300; }
+.login-card { width:min(400px,92vw); background:var(--card); border:1px solid var(--line); border-radius:16px; padding:32px 28px; }
+.login-card h2 { text-align:center; margin-bottom:6px; font-size:22px; }
+.login-card .sub { text-align:center; color:var(--muted); font-size:13px; margin-bottom:22px; }
+.login-card label { font-size:13px; color:var(--muted); display:block; margin:12px 0 6px; }
+.login-card .btn-primary { width:100%; margin-top:20px; padding:11px; font-size:15px; }
+.login-err { color:var(--err); font-size:13px; min-height:18px; margin-top:10px; text-align:center; }
+.log-row { display:flex; justify-content:space-between; gap:10px; padding:7px 4px; border-bottom:1px dashed var(--line); font-size:13px; }
+.log-row .t { color:var(--muted); font-size:12px; white-space:nowrap; }
+@media (max-width:720px) { th, td { font-size:12px; } td input[type=number] { width:80px; } }
+</style>
+</head>
+<body>
+
+<!-- 登录页 -->
+<div class="login-view" id="login-view">
+  <div class="login-card">
+    <h2>⚙️ 管理后台</h2>
+    <div class="sub">请使用管理员账号登录</div>
+    <label>账号</label>
+    <input type="text" id="login-username" placeholder="管理员账号" autocomplete="username">
+    <label>密码</label>
+    <input type="password" id="login-password" placeholder="管理员密码" autocomplete="current-password">
+    <button class="btn btn-primary" id="login-btn">登 录</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- 管理面板 -->
+<div id="admin-view" style="display:none">
+<div class="wrap">
+  <header>
+    <h1>⚙️ Seedance <span>管理后台</span></h1>
+    <div class="hd-right">
+      <span class="badge ok" id="admin-name">-</span>
+      <button class="btn" id="btn-logout">退出</button>
+    </div>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-panel="panel-users">👥 用户管理</div>
+    <div class="tab" data-panel="panel-tasks">🎬 任务总览</div>
+    <div class="tab" data-panel="panel-models">🤖 模型与功能</div>
+    <div class="tab" data-panel="panel-settings">⚙️ 系统设置</div>
+    <div class="tab" data-panel="panel-logs">📜 日志</div>
+  </div>
+
+  <!-- 用户管理 -->
+  <div class="panel active" id="panel-users">
+    <div class="card">
+      <h2>➕ 创建账号</h2>
+      <div class="row">
+        <div class="field"><label>账号</label><input type="text" id="nu-username" placeholder="2-20 位字符"></div>
+        <div class="field"><label>密码</label><input type="text" id="nu-password" placeholder="至少 4 位"></div>
+        <div class="field"><label>初始积分</label><input type="number" id="nu-points" value="0" min="0" step="0.1"></div>
+        <button class="btn btn-primary" id="btn-create-user">创建账号</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>👥 用户列表</h2>
+      <div id="user-list"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+
+  <!-- 任务总览 -->
+  <div class="panel" id="panel-tasks">
+    <div class="card">
+      <h2>🎬 全部任务 <span class="tip">（每个用户的生成记录与视频）</span></h2>
+      <div class="row">
+        <div class="field"><label>按用户筛选</label><select id="task-user-filter"><option value="0">全部用户</option></select></div>
+        <button class="btn" id="btn-refresh-tasks">🔄 刷新</button>
+      </div>
+      <div id="admin-task-list"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+
+  <!-- 模型与功能 -->
+  <div class="panel" id="panel-models">
+    <div class="card">
+      <h2>🔧 前端功能控制</h2>
+      <div class="switch-row"><div><div>✏️ 文生视频</div><div class="desc">前端是否显示</div></div><label class="switch"><input type="checkbox" id="sw-text" data-key="text_mode"><span class="slider"></span></label></div>
+      <div class="switch-row"><div><div>🖼️ 多模态参考</div><div class="desc">前端是否显示</div></div><label class="switch"><input type="checkbox" id="sw-multi" data-key="multi_mode"><span class="slider"></span></label></div>
+      <div class="switch-row"><div><div>🎞️ 首尾帧</div><div class="desc">前端是否显示</div></div><label class="switch"><input type="checkbox" id="sw-fl" data-key="first_last_mode"><span class="slider"></span></label></div>
+      <div class="switch-row"><div><div>📋 任务中心</div><div class="desc">前端是否显示</div></div><label class="switch"><input type="checkbox" id="sw-task" data-key="task_center"><span class="slider"></span></label></div>
+      <div class="switch-row"><div><div>🖼️ 本地上传</div><div class="desc">前端图片上传按钮</div></div><label class="switch"><input type="checkbox" id="sw-upload" data-key="upload_enabled"><span class="slider"></span></label></div>
+      <div class="actions" style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn btn-primary" id="btn-save-features">💾 保存功能设置</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🤖 模型与积分 <span class="tip">（勾选=前端可选，设置每模型每秒积分，修改后前端实时同步）</span></h2>
+      <div class="row">
+        <button class="btn" id="btn-refresh-models">🔄 重新拉取模型</button>
+        <span id="model-load-state" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="model-table-wrap"><div class="empty">加载中…</div></div>
+      <div class="actions" style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn btn-primary" id="btn-save-models">💾 保存模型设置与积分</button>
+        <button class="btn" id="btn-reset-pricing">重置全部积分为平台默认</button>
+      </div>
+      <div class="hint">💡 模型积分修改后，前端用户刷新页面即可看到最新单价；生成时按「模型积分/秒 × 时长」预扣积分，任务失败自动退还。</div>
+    </div>
+  </div>
+
+  <!-- 系统设置 -->
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <h2>⚙️ 系统设置</h2>
+      <div class="row">
+        <div class="field"><label>视频保留天数</label><input type="number" id="set-retention" min="1"></div>
+        <div class="field"><label>单用户并发上限</label><input type="number" id="set-concurrent" min="1"></div>
+        <div class="field"><label>平台接入地址</label><input type="text" id="set-baseurl" placeholder="https://"></div>
+        <div class="field"><label>平台 Key</label><input type="password" id="set-platform-key" placeholder="用于拉取模型列表（管理员专用）"><span id="set-platform-key-masked" style="font-size:12px;color:var(--muted)"></span></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn btn-primary" id="btn-save-settings">💾 保存设置</button>
+      </div>
+      <div class="hint">💡 保留天数：本地视频超过该天数自动清理（任务记录仍保留）；「永久保留」的任务不会被清理。</div>
+    </div>
+    <div class="card">
+      <h2>🔒 管理员密码</h2>
+      <div class="row">
+        <div class="field"><label>新密码</label><input type="password" id="admin-new-pass" placeholder="至少 4 位"></div>
+        <div class="field"><label>确认密码</label><input type="password" id="admin-new-pass2" placeholder="再次输入"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn btn-primary" id="btn-admin-pass">修改管理员密码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="panel" id="panel-logs">
+    <div class="card">
+      <h2>📜 管理操作日志</h2>
+      <div id="audit-log-list"><div class="empty">加载中…</div></div>
+    </div>
+    <div class="card">
+      <h2>🔑 用户密码修改记录</h2>
+      <div id="pw-log-list"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- 发放积分弹窗 -->
+<div class="modal" id="points-modal">
+  <div class="modal-card">
+    <h3 id="points-modal-title">发放 / 扣除积分</h3>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>积分变动</label><input type="number" id="points-modal-amount" step="0.1" placeholder="正数为发放，负数为扣除"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" onclick="document.getElementById('points-modal').classList.remove('open')">取消</button>
+      <button class="btn btn-primary" id="btn-points-save">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+window.AUTH = { tokenKey: 'seedance_admin_token', loginPath: '/api/admin/login', sessionPath: '/api/admin/session' };
+</script>
+<script src="/static/auth.js"></script>
+<script src="/static/admin.js"></script>
+</body>
+</html>
+
+
