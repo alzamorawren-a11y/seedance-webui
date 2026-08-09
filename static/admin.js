@@ -379,6 +379,7 @@ async function loadSettings() {
     $('set-concurrent').value = s.max_concurrent || '3';
     $('set-baseurl').value = '';
     $('set-baseurl').placeholder = s.base_url ? '已配置（如需修改请填写完整接入地址）' : 'https://';
+    $('set-public-base').value = s.public_base_url || '';
     $('set-platform-key-masked').textContent = s.platform_key_masked ? ('当前：' + s.platform_key_masked) : '（未配置）';
   } catch (e) {}
 }
@@ -430,6 +431,7 @@ $('btn-save-settings').addEventListener('click', async () => {
   fd.append('retention_days', $('set-retention').value);
   fd.append('max_concurrent', $('set-concurrent').value);
   fd.append('base_url', $('set-baseurl').value);
+  fd.append('public_base_url', $('set-public-base').value.trim());
   const pk = $('set-platform-key').value.trim();
   if (pk) fd.append('platform_key', pk);
   try {

@@ -136,7 +136,9 @@ function applyFeatures() {
   show('tab-fl', FEATURES.first_last_mode !== false);
   show('task-center-card', FEATURES.task_center !== false);
   const up = FEATURES.upload_enabled !== false;
-  show('mat-upload-btn', up);
+  show('mat-upload-img', up);
+  show('mat-upload-video', up);
+  show('mat-upload-audio', up);
   show('fl-first-up', up);
   show('fl-last-up', up);
   const order = ['text', 'multi', 'first_last'];
@@ -201,21 +203,20 @@ function addMaterialUrl() {
   const url = $('mat-url').value.trim();
   if (!url) return;
   if (!/^https?:\/\//i.test(url)) { toast('请输入以 http(s):// 开头的 URL', false); return; }
-  MATERIALS.push({ url, kind: 'url', name: url });
+  MATERIALS.push({ url, type: $('mat-type').value || 'image', kind: 'url', name: url });
   $('mat-url').value = '';
   renderMaterials();
 }
 
-async function uploadMaterial(input) {
+async function uploadMaterial(input, type) {
   const file = input.files && input.files[0];
   if (!file) return;
   const fd = new FormData();
   fd.append('file', file);
   try {
     const d = await apiJson('/api/upload', { method: 'POST', body: fd });
-    const abs = location.origin + d.url;
-    MATERIALS.push({ url: abs, kind: 'upload', name: file.name });
-    toast('已上传，可在同网络内引用');
+    MATERIALS.push({ url: d.url, type: d.type || type || 'image', kind: 'upload', name: file.name });
+    toast('已上传素材');
     renderMaterials();
   } catch (e) {
     toast('上传失败: ' + e.message, false);
@@ -231,8 +232,10 @@ function renderMaterials() {
   MATERIALS.forEach((m, i) => {
     const div = document.createElement('div');
     div.className = 'mat-item';
-    const isImg = /\.(png|jpe?g|webp|gif|bmp)(\?|$)/i.test(m.url);
-    div.innerHTML = `<span class="idx">${i + 1}</span>${isImg ? `<img src="${m.url}" alt="">` : '<span>📎</span>'}<span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.name}</span><button title="在提示词中引用 @${i + 1}" onclick="insertMaterialRef(${i})">@</button><button onclick="removeMaterial(${i})">✕</button>`;
+    const TYPE_ICON = { image: '🖼️', video: '🎞️', audio: '🔊' };
+    const ic = TYPE_ICON[m.type] || '📎';
+    const isImg = m.type === 'image';
+    div.innerHTML = `<span class="idx">${i + 1}</span>${isImg ? `<img src="${m.url}" alt="">` : `<span>${ic}</span>`}<span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.name}</span><button title="在提示词中引用 @${i + 1}" onclick="insertMaterialRef(${i})">@</button><button onclick="removeMaterial(${i})">✕</button>`;
     box.appendChild(div);
   });
   if (!MATERIALS.length) box.innerHTML = '<span class="hint">尚未添加素材</span>';
@@ -260,7 +263,7 @@ async function uploadFirstFrame(input) {
   fd.append('file', file);
   try {
     const d = await apiJson('/api/upload', { method: 'POST', body: fd });
-    FIRST_FRAME = location.origin + d.url;
+    FIRST_FRAME = d.url;
     toast('首帧已上传');
     renderFrames();
   } catch (e) { toast('上传失败: ' + e.message, false); }
@@ -273,7 +276,7 @@ async function uploadLastFrame(input) {
   fd.append('file', file);
   try {
     const d = await apiJson('/api/upload', { method: 'POST', body: fd });
-    LAST_FRAME = location.origin + d.url;
+    LAST_FRAME = d.url;
     toast('尾帧已上传');
     renderFrames();
   } catch (e) { toast('上传失败: ' + e.message, false); }
@@ -295,20 +298,8 @@ function renderFrames() {
 
 // ---------- 生成 ----------
 function expandPrompt() {
-  let p = $('prompt').value;
-  if (MODE === 'multi') {
-    p = p.replace(/@(\d+)/g, (_, n) => {
-      const i = parseInt(n) - 1;
-      const m = MATERIALS[i];
-      return m ? m.url : `@${n}`;
-    });
-  } else if (MODE === 'first_last') {
-    let prefix = '';
-    if (FIRST_FRAME) prefix += `首帧图片 @${FIRST_FRAME}，`;
-    if (LAST_FRAME) prefix += `尾帧图片 @${LAST_FRAME}，`;
-    p = prefix + p;
-  }
-  return p;
+  // @N 标记原样保留，由后端解析为平台 assets（确保素材被模型真正参考）
+  return $('prompt').value;
 }
 
 async function generate() {
@@ -337,6 +328,9 @@ async function generate() {
   fd.append('duration', $('duration').value);
   fd.append('ratio', $('ratio').value);
   fd.append('mode', MODE);
+  fd.append('materials', JSON.stringify(MATERIALS.map(m => ({ url: m.url, type: m.type, name: m.name }))));
+  fd.append('first_frame', FIRST_FRAME || '');
+  fd.append('last_frame', LAST_FRAME || '');
   $('gen-btn').disabled = true;
   $('gen-btn').textContent = '提交中…';
   try {
@@ -344,6 +338,7 @@ async function generate() {
     toast('任务已提交 ✅');
     $('prompt').value = '';
     MATERIALS = []; renderMaterials();
+    FIRST_FRAME = null; LAST_FRAME = null; renderFrames();
     await loadMe();
     await loadTasks();
     await loadPointsLogs();

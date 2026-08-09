@@ -149,13 +149,22 @@ footer { margin-top:20px; text-align:center; color:var(--muted); font-size:12px;
     <!-- 多模态参考素材 -->
     <div class="materials" id="materials" style="display:none">
       <div class="mat-input">
-        <input type="text" id="mat-url" placeholder="粘贴图片/视频/音频的公网 URL（如 https://xxx.com/1.png）">
+        <select id="mat-type" style="width:88px;flex:0 0 auto">
+          <option value="image">图片</option>
+          <option value="video">视频</option>
+          <option value="audio">音频</option>
+        </select>
+        <input type="text" id="mat-url" placeholder="粘贴公网 URL（或直接上传）">
         <button class="btn" onclick="addMaterialUrl()">添加</button>
-        <button class="btn" id="mat-upload-btn" onclick="document.getElementById('mat-file').click()">上传图片</button>
-        <input type="file" id="mat-file" accept="image/*" style="display:none" onchange="uploadMaterial(this)">
+        <button class="btn" id="mat-upload-img" onclick="document.getElementById('mat-file-img').click()">上传图片</button>
+        <button class="btn" id="mat-upload-video" onclick="document.getElementById('mat-file-video').click()">上传视频</button>
+        <button class="btn" id="mat-upload-audio" onclick="document.getElementById('mat-file-audio').click()">上传音频</button>
+        <input type="file" id="mat-file-img" accept="image/*" style="display:none" onchange="uploadMaterial(this,'image')">
+        <input type="file" id="mat-file-video" accept="video/*,video/mp4,.mp4,.mov,.webm,.avi,.mkv,.m4v" style="display:none" onchange="uploadMaterial(this,'video')">
+        <input type="file" id="mat-file-audio" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus" style="display:none" onchange="uploadMaterial(this,'audio')">
       </div>
       <div class="mat-list" id="mat-list"></div>
-      <div class="hint">💡 素材自动编号为 @1、@2…，在提示词里写 @1 即可引用该素材。<br>⚠️ 平台需要能访问素材 URL：优先用公网图床链接。</div>
+      <div class="hint">💡 素材自动编号为 @1、@2…，在提示词里写 @1 即可引用该素材（图片/视频/音频都支持）。<br>⚠️ 平台需要能访问素材 URL：公网部署会自动使用本站公网地址；本地测试请在管理端配置「公网访问地址」。</div>
     </div>
 
     <!-- 首尾帧 -->

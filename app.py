@@ -2,6 +2,7 @@
 """Seedance WebUI - 前后端分离：多用户 + 积分体系 + 管理员后台"""
 import hashlib
 import json
+import re
 import secrets
 import shutil
 import sqlite3
@@ -13,7 +14,7 @@ from pathlib import Path
 import requests
 import uvicorn
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import Depends, FastAPI, UploadFile, File, Form, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Request, UploadFile, File, Form, Header, HTTPException, Query
 import io
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -38,8 +39,12 @@ DEFAULT_FEATURES = {
     "upload_enabled": True,
     "enabled_models": [],
 }
-DEFAULT_SETTINGS = {"retention_days": "30", "max_concurrent": "3", "platform_key_enc": ""}
+DEFAULT_SETTINGS = {"retention_days": "30", "max_concurrent": "3", "platform_key_enc": "", "public_base_url": ""}
 RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "2.35:1", "21:9"]
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+VIDEO_EXTS = (".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v")
+AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus")
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100MB
 TASK_TIMEOUT_SECONDS = 600
 
 app = FastAPI(title="Seedance WebUI")
@@ -78,6 +83,7 @@ def init_db():
         user_id INTEGER NOT NULL,
         username TEXT,
         model TEXT, prompt TEXT, duration TEXT, resolution TEXT, ratio TEXT, mode TEXT,
+        assets_json TEXT DEFAULT '',
         status TEXT, cost REAL, video_url TEXT, local_video TEXT, cover_url TEXT,
         error_message TEXT, keep_forever INTEGER DEFAULT 0,
         created_at TEXT, updated_at TEXT
@@ -104,6 +110,11 @@ def init_db():
         value TEXT
     );
     """)
+    # 迁移：老库补充 assets_json 列
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+    if "assets_json" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN assets_json TEXT DEFAULT ''")
+    conn.commit()
     cur = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1")
     if cur.fetchone() is None:
         conn.execute(
@@ -263,18 +274,96 @@ def _task_view(t, is_admin: bool = False) -> dict:
             d["local_video"] = ""
     if not d["video_play_url"] and d.get("video_url"):
         d["video_play_url"] = d["video_url"]
+    try:
+        d["assets"] = json.loads(d.get("assets_json") or "") if d.get("assets_json") else []
+    except Exception:
+        d["assets"] = []
     return d
 
 
 def _ref_image_exists(prompt: str) -> str:
-    """检查提示词里引用的本站 /uploads 图片是否仍存在，返回失效文件名或空串"""
-    import re
-    for m in re.finditer(r"https?://[^/\s]+(/uploads/[A-Za-z0-9._-]+)", prompt or ""):
-        rel = m.group(1)
-        fname = rel.split("/")[-1]
-        if not (UPLOAD_DIR / fname).exists():
-            return fname
+    """兼容旧逻辑：检查提示词里直接粘贴的本站 /uploads 图片是否仍存在"""
+    return _ref_material_exists(prompt or "")
+
+
+def _file_type(ext: str) -> str:
+    ext = (ext or "").lower()
+    if ext in IMAGE_EXTS:
+        return "image"
+    if ext in VIDEO_EXTS:
+        return "video"
+    if ext in AUDIO_EXTS:
+        return "audio"
     return ""
+
+
+def _ref_material_exists(url: str) -> str:
+    """检查素材 URL 指向的本站 /uploads 文件是否仍存在，返回失效文件名或空串"""
+    import re
+    m = re.search(r"/uploads/([A-Za-z0-9._-]+)", url or "")
+    if m and not (UPLOAD_DIR / m.group(1)).exists():
+        return m.group(1)
+    return ""
+
+
+def _abs_url(request, url: str) -> str:
+    """把本站 /uploads 相对路径转成平台可访问的公网 URL。
+
+    优先使用管理员配置的 public_base_url（本地开发时指向云端/隧道域名），
+    未配置时回退为当前请求的站点地址（公网部署时自动生效）。
+    """
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if url.startswith(("http://", "https://")):
+        return url
+    base = get_setting("public_base_url", "").strip().rstrip("/")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    return base + ("/" + url.lstrip("/") if url.startswith("/") else "/" + url)
+
+
+def _parse_materials(raw: str):
+    """解析前端传来的素材列表 JSON -> [{url, type, name}]"""
+    import json as _json
+    if not raw or not raw.strip():
+        return []
+    try:
+        data = _json.loads(raw)
+    except Exception:
+        return None  # 非法 JSON
+    if not isinstance(data, list):
+        return None
+    out = []
+    for it in data:
+        if not isinstance(it, dict):
+            continue
+        url = str(it.get("url") or "").strip()
+        ftype = str(it.get("type") or "").strip()
+        if not url or ftype not in ("image", "video", "audio"):
+            continue
+        out.append({"url": url, "type": ftype, "name": str(it.get("name") or "")})
+    return out
+
+
+def _resolve_refs(prompt: str, materials: list) -> tuple:
+    """把提示词里的 @N 标记映射到素材列表。
+
+    返回 (清理后的提示词, 被引用的素材列表)。
+    """
+    import re
+    used = set()
+
+    def repl(m):
+        n = int(m.group(1)) - 1
+        if 0 <= n < len(materials):
+            used.add(n)
+            return ""
+        return m.group(0)
+
+    cleaned = re.sub(r"@(\d+)", repl, prompt or "")
+    refs = [materials[n] for n in sorted(used)]
+    return cleaned, refs
 
 
 def _mask_key(key: str) -> str:
@@ -600,15 +689,40 @@ def _user_lock(user_id: int) -> threading.Lock:
 @app.post("/api/generate")
 def generate(model: str = Form(...), prompt: str = Form(...), duration: str = Form("5s"),
              resolution: str = Form(""), ratio: str = Form(""), mode: str = Form("text"),
+             materials: str = Form("[]"), first_frame: str = Form(""), last_frame: str = Form(""),
+             request: Request = None,
              _auth: dict = Depends(require_user)):
     user = _auth
     cfg = get_config()
     prompt = (prompt or "").strip()
-    if not model or not prompt:
-        return JSONResponse({"ok": False, "error": "模型和提示词不能为空"}, status_code=400)
+    if not model:
+        return JSONResponse({"ok": False, "error": "模型不能为空"}, status_code=400)
     miss = _ref_image_exists(prompt)
     if miss:
         return JSONResponse({"ok": False, "error": f"参考图片 {miss} 已失效（实例重启可能清空上传文件），请重新上传"}, status_code=400)
+    # ---------- 多模态素材解析 ----------
+    mats = _parse_materials(materials)
+    if mats is None:
+        return JSONResponse({"ok": False, "error": "素材数据格式错误"}, status_code=400)
+    for m in mats:
+        miss = _ref_material_exists(m["url"])
+        if miss:
+            return JSONResponse({"ok": False, "error": f"参考素材 {miss} 已失效（实例重启可能清空上传文件），请重新上传"}, status_code=400)
+    for f in (first_frame, last_frame):
+        if f:
+            miss = _ref_material_exists(f)
+            if miss:
+                return JSONResponse({"ok": False, "error": f"参考图片 {miss} 已失效（实例重启可能清空上传文件），请重新上传"}, status_code=400)
+    cleaned_prompt, refs = _resolve_refs(prompt, mats)
+    if not cleaned_prompt:
+        return JSONResponse({"ok": False, "error": "提示词不能为空"}, status_code=400)
+    leftover = re.search(r"@\d+", cleaned_prompt or "")
+    if leftover:
+        return JSONResponse({"ok": False, "error": f"提示词中的 {leftover.group(0)} 引用了不存在的素材，请检查编号"}, status_code=400)
+    if mode == "multi" and mats and not refs:
+        return JSONResponse({"ok": False, "error": "请在提示词中用 @1/@2... 引用已上传的素材，模型才能参考它们"}, status_code=400)
+    if mode == "first_last" and not first_frame and not last_frame:
+        return JSONResponse({"ok": False, "error": "请至少上传首帧或尾帧图片"}, status_code=400)
     key = _get_platform_key()
     if not key:
         return JSONResponse({"ok": False, "error": "平台 Key 未配置，请联系管理员"}, status_code=400)
@@ -634,23 +748,50 @@ def generate(model: str = Form(...), prompt: str = Form(...), duration: str = Fo
         if not _freeze_points(user["id"], cost, local_id, "生成视频：" + model + " x " + duration):
             bal = float(user["points"])
             return JSONResponse({"ok": False, "error": "积分不足：本次需要 " + str(cost) + " 积分，当前剩余 " + str(bal) + " 积分"}, status_code=402)
+        # 构造平台 assets（公网 URL）
+        assets = []
+        if mode == "multi":
+            for m in refs:
+                url = _abs_url(request, m["url"])
+                if m["type"] == "image":
+                    assets.append({"url": url, "type": "image", "role": "reference"})
+                elif m["type"] == "video":
+                    assets.append({"url": url, "type": "video", "role": "reference"})
+                elif m["type"] == "audio":
+                    assets.append({"url": url, "type": "audio", "role": "audio"})
+            if assets:
+                pass  # 下面统一设置 referenceMode
+        elif mode == "first_last":
+            if first_frame:
+                assets.append({"url": _abs_url(request, first_frame), "type": "image", "role": "first_frame"})
+            if last_frame:
+                assets.append({"url": _abs_url(request, last_frame), "type": "image", "role": "last_frame"})
+        assets_json = json.dumps(assets, ensure_ascii=False) if assets else ""
         conn = get_db()
         try:
             conn.execute(
-                "INSERT INTO tasks (id, local_id, user_id, username, model, prompt, duration, resolution, ratio, mode, "
-                "status, cost, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO tasks (id, local_id, user_id, username, model, prompt, duration, resolution, ratio, mode, assets_json, "
+                "status, cost, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (local_id, local_id, user["id"], user["username"], model, prompt, duration, resolution, ratio, mode,
-                 "pending", cost, ts, ts))
+                 assets_json, "pending", cost, ts, ts))
             conn.commit()
         finally:
             conn.close()
-    body = {"model": model, "prompt": prompt}
+    body = {"model": model, "prompt": cleaned_prompt}
     if duration:
         body["duration"] = duration
     if resolution:
         body["resolution"] = resolution
     if ratio:
         body["aspect_ratio"] = ratio
+    if mode == "multi" and assets:
+        body["referenceMode"] = "multimodal"
+        body["modeType"] = "image2video"
+        body["assets"] = assets
+    elif mode == "first_last" and assets:
+        body["referenceMode"] = "first_last_frame"
+        body["modeType"] = "frames2video"
+        body["assets"] = assets
     try:
         r = requests.post(f"{cfg['base_url']}/v1/video/generations",
                           headers=api_headers(key), json=body, timeout=30)
@@ -708,13 +849,24 @@ def download_video(task_id: str, _auth: dict = Depends(require_user_media)):
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), _auth: dict = Depends(require_user)):
     ext = Path(file.filename or "img.png").suffix.lower()
-    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
-        return JSONResponse({"ok": False, "error": "仅支持图片文件 (png/jpg/jpeg/webp/gif/bmp)"}, status_code=400)
+    ftype = _file_type(ext)
+    if not ftype:
+        return JSONResponse({"ok": False, "error": "仅支持图片/视频/音频素材文件 (图片: png/jpg/jpeg/webp/gif/bmp；视频: mp4/mov/webm/avi/mkv/m4v；音频: mp3/wav/m4a/aac/ogg/flac/opus)"}, status_code=400)
     name = f"{uuid.uuid4().hex}{ext}"
     dest = UPLOAD_DIR / name
+    written = 0
     with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    return {"ok": True, "url": f"/uploads/{name}", "filename": name, "size": dest.stat().st_size}
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > MAX_UPLOAD_BYTES:
+                f.close()
+                dest.unlink(missing_ok=True)
+                return JSONResponse({"ok": False, "error": "素材文件过大，上限 100MB"}, status_code=400)
+            f.write(chunk)
+    return {"ok": True, "url": f"/uploads/{name}", "filename": name, "type": ftype, "size": dest.stat().st_size}
 
 
 # ---------- 后台调度器：统一刷新任务 + 视频落盘 + 清理 ----------
@@ -1251,6 +1403,7 @@ def admin_get_settings(_auth: dict = Depends(require_admin)):
 @app.post("/api/admin/settings")
 def admin_set_settings(retention_days: str = Form(""), max_concurrent: str = Form(""),
                        base_url: str = Form(""), platform_key: str = Form(""),
+                       public_base_url: str = Form(""),
                        _auth: dict = Depends(require_admin)):
     if retention_days:
         try:
@@ -1276,6 +1429,11 @@ def admin_set_settings(retention_days: str = Form(""), max_concurrent: str = For
     if platform_key:
         set_setting("platform_key_enc", _encrypt_key(platform_key.strip()))
         MODEL_CACHE["ts"] = 0.0
+    if public_base_url:
+        pb = public_base_url.strip().rstrip("/")
+        if pb and not pb.startswith(("http://", "https://")):
+            return JSONResponse({"ok": False, "error": "公网访问地址需以 http(s):// 开头"}, status_code=400)
+        set_setting("public_base_url", pb)
     _audit(_auth, "set_settings", f"更新系统设置：retention={retention_days}, max_concurrent={max_concurrent}, base_url=已更新" if base_url else f"更新系统设置：retention={retention_days}, max_concurrent={max_concurrent}")
     return {"ok": True}
 
