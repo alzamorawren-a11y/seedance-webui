@@ -205,6 +205,32 @@ function statusLabel(s) {
   return map[s] || s;
 }
 
+function withToken(url) {
+  return url.startsWith('/') ? url + '?token=' + encodeURIComponent(getToken()) : url;
+}
+
+function playVideo(url, taskId) {
+  const modal = $('video-modal');
+  if (!modal) return;
+  const player = $('video-modal-player');
+  const links = $('video-modal-links');
+  links.innerHTML = '';
+  if (taskId) {
+    links.innerHTML = `<a class="btn" href="${withToken('/api/admin/download/' + taskId)}" download>⬇ 下载视频</a>
+      <button class="btn" onclick="closeVideoModal()">✕ 关闭</button>`;
+  }
+  player.src = url;
+  modal.classList.add('open');
+  player.play().catch(() => {});
+}
+
+function closeVideoModal() {
+  const modal = $('video-modal');
+  const player = $('video-modal-player');
+  if (player) { player.pause(); player.removeAttribute('src'); }
+  if (modal) modal.classList.remove('open');
+}
+
 function renderAdminTasks(tasks) {
   const box = $('admin-task-list');
   if (!tasks.length) { box.innerHTML = '<div class="empty">暂无任务</div>'; return; }
@@ -215,9 +241,10 @@ function renderAdminTasks(tasks) {
     const st = t.status || 'pending';
     const meta = [t.duration, t.resolution, t.ratio].filter(Boolean).join(' · ');
     let video = '';
-    if (st === 'succeeded') {
-      const src = t.local_video ? '/api/admin/download/' + t.id : (t.video_url || '');
-      if (src) video = `<video controls src="${src}"></video>`;
+    if (st === 'succeeded' && t.video_play_url) {
+      const url = withToken(t.video_play_url);
+      video = `<div class="task-result"><video controls src="${url}"></video>
+        <button class="zoom-btn" onclick="playVideo('${url}', '${t.id}')">⛶ 放大</button></div>`;
     }
     const keepLabel = t.keep_forever ? '取消永久保留' : '永久保留';
     div.innerHTML = `
@@ -231,7 +258,10 @@ function renderAdminTasks(tasks) {
       ${video}
       <div class="t-actions">
         <span style="font-size:12px;color:var(--muted)">创建：${t.createdAt || ''}</span>
-        ${t.local_video ? `<a class="btn" href="/api/admin/download/${t.id}" download>⬇ 下载</a>` : ''}
+        ${t.video_play_url ? `<a class="btn" href="${withToken(t.video_play_url)}" target="_blank">▶ 预览</a>` : ''}
+        ${t.local_video ? `<a class="btn" href="${withToken('/api/admin/download/' + t.id)}" download>⬇ 下载</a>` : ''}
+        ${t.video_url ? `<a class="btn" href="${t.video_url}" target="_blank">🌐 平台链接</a>` : ''}
+        ${st === 'succeeded' && !t.video_play_url ? '<span style="color:var(--muted)">（视频文件已过期清理）</span>' : ''}
         <button class="btn" data-keep="${t.id}" data-v="${t.keep_forever ? 0 : 1}">${keepLabel}</button>
         <button class="btn btn-danger" data-del="${t.id}">删除</button>
       </div>`;

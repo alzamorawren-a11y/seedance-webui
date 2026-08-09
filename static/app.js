@@ -364,6 +364,32 @@ function statusLabel(s) {
   return map[s] || s;
 }
 
+function withToken(url) {
+  return url.startsWith('/') ? url + '?token=' + encodeURIComponent(getToken()) : url;
+}
+
+function playVideo(url, taskId) {
+  const modal = $('video-modal');
+  if (!modal) return;
+  const player = $('video-modal-player');
+  const links = $('video-modal-links');
+  links.innerHTML = '';
+  if (taskId) {
+    links.innerHTML = `<a class="btn" href="${withToken('/api/download/' + taskId)}" download>⬇ 下载视频</a>
+      <button class="btn" onclick="closeVideoModal()">✕ 关闭</button>`;
+  }
+  player.src = url;
+  modal.classList.add('open');
+  player.play().catch(() => {});
+}
+
+function closeVideoModal() {
+  const modal = $('video-modal');
+  const player = $('video-modal-player');
+  if (player) { player.pause(); player.removeAttribute('src'); }
+  if (modal) modal.classList.remove('open');
+}
+
 function renderTasks(tasks) {
   const box = $('task-list');
   $('task-count').textContent = tasks.length ? `${tasks.length} 个任务` : '';
@@ -374,10 +400,12 @@ function renderTasks(tasks) {
     div.className = 'task';
     const st = t.status || 'pending';
     let resultHtml = '';
-    const canDownload = st === 'succeeded' && t.local_video;
-    if (st === 'succeeded' && (t.local_video || t.video_url)) {
-      const src = t.local_video ? '/api/download/' + t.id : t.video_url;
-      resultHtml = `<div class="task-result"><video controls src="${src}"></video></div>`;
+    if (st === 'succeeded' && t.video_play_url) {
+      const url = withToken(t.video_play_url);
+      resultHtml = `<div class="task-result">
+        <video controls src="${url}"></video>
+        <button class="zoom-btn" onclick="playVideo('${url}', '${t.id}')">⛶ 放大</button>
+      </div>`;
     } else if (t.coverUrl) {
       resultHtml = `<div class="task-result"><img class="cover" src="${t.coverUrl}" alt="cover"></div>`;
     }
@@ -388,6 +416,10 @@ function renderTasks(tasks) {
     if (t.resolution) meta.push(t.resolution);
     if (t.ratio) meta.push(t.ratio);
     if (t.cost) meta.push(t.cost + ' 积分');
+    const actions = [];
+    if (t.video_play_url) actions.push(`<a class="btn" href="${withToken(t.video_play_url)}" target="_blank">▶ 预览</a>`);
+    if (t.local_video) actions.push(`<a class="btn" href="${withToken('/api/download/' + t.id)}" download>⬇ 下载</a>`);
+    if (t.video_url) actions.push(`<a class="btn" href="${t.video_url}" target="_blank">🌐 平台链接</a>`);
     div.innerHTML = `
       <div class="task-top">
         <span class="task-model">${t.model || ''}${meta.length ? ' · ' + meta.join(' · ') : ''}</span>
@@ -398,9 +430,8 @@ function renderTasks(tasks) {
       ${errHtml}
       <div class="task-meta">
         <span>创建：${t.createdAt || ''}</span>
-        ${t.local_video ? `<a href="/api/download/${t.id}" download>下载视频 ⬇</a>` : ''}
-        ${!t.local_video && t.video_url ? `<a href="${t.video_url}" target="_blank">打开平台链接 ↗</a>` : ''}
-        ${st === 'succeeded' && !canDownload && !t.local_video ? '<span>（本地视频已清理，仅保留记录）</span>' : ''}
+        ${actions.join('')}
+        ${st === 'succeeded' && !t.video_play_url ? '<span style="color:var(--muted)">（视频文件已过期清理）</span>' : ''}
       </div>`;
     box.appendChild(div);
   });

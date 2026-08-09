@@ -13,7 +13,7 @@ from pathlib import Path
 import requests
 import uvicorn
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import Depends, FastAPI, UploadFile, File, Form, Header, HTTPException
+from fastapi import Depends, FastAPI, UploadFile, File, Form, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -231,6 +231,49 @@ def require_admin(authorization: str | None = Header(None)) -> dict:
     if not admin:
         raise HTTPException(status_code=401, detail="管理员未登录或登录已过期")
     return admin
+
+
+def require_user_media(authorization: str | None = Header(None), token: str | None = Query(None)) -> dict:
+    """视频/文件接口鉴权：兼容 Authorization 头与 ?token= 查询参数（浏览器 <video>/<a> 不带请求头）"""
+    tok = _extract_token(authorization) or (token or "").strip()
+    user = _user_by_token(tok, role="user")
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
+    return user
+
+
+def require_admin_media(authorization: str | None = Header(None), token: str | None = Query(None)) -> dict:
+    tok = _extract_token(authorization) or (token or "").strip()
+    admin = _user_by_token(tok, role="admin")
+    if not admin:
+        raise HTTPException(status_code=401, detail="管理员未登录或登录已过期")
+    return admin
+
+
+def _task_view(t, is_admin: bool = False) -> dict:
+    """序列化任务：补充 video_play_url（本地文件存在则用本地下载接口，否则退回平台 URL）"""
+    d = dict(t)
+    d["video_play_url"] = ""
+    if d.get("local_video"):
+        lpath = Path(d["local_video"])
+        if lpath.exists():
+            d["video_play_url"] = ("/api/admin/download/" if is_admin else "/api/download/") + d["id"]
+        else:
+            d["local_video"] = ""
+    if not d["video_play_url"] and d.get("video_url"):
+        d["video_play_url"] = d["video_url"]
+    return d
+
+
+def _ref_image_exists(prompt: str) -> str:
+    """检查提示词里引用的本站 /uploads 图片是否仍存在，返回失效文件名或空串"""
+    import re
+    for m in re.finditer(r"https?://[^/\s]+(/uploads/[A-Za-z0-9._-]+)", prompt or ""):
+        rel = m.group(1)
+        fname = rel.split("/")[-1]
+        if not (UPLOAD_DIR / fname).exists():
+            return fname
+    return ""
 
 
 def _mask_key(key: str) -> str:
@@ -561,6 +604,9 @@ def generate(model: str = Form(...), prompt: str = Form(...), duration: str = Fo
     prompt = (prompt or "").strip()
     if not model or not prompt:
         return JSONResponse({"ok": False, "error": "模型和提示词不能为空"}, status_code=400)
+    miss = _ref_image_exists(prompt)
+    if miss:
+        return JSONResponse({"ok": False, "error": f"参考图片 {miss} 已失效（实例重启可能清空上传文件），请重新上传"}, status_code=400)
     key = _get_platform_key()
     if not key:
         return JSONResponse({"ok": False, "error": "平台 Key 未配置，请联系管理员"}, status_code=400)
@@ -635,7 +681,7 @@ def list_tasks(refresh: int = 0, _auth: dict = Depends(require_user)):
                             (_auth["id"],)).fetchall()
     finally:
         conn.close()
-    return {"ok": True, "tasks": [dict(r) for r in rows]}
+    return {"ok": True, "tasks": [_task_view(r) for r in rows]}
 
 
 @app.get("/api/task/{task_id}")
@@ -643,11 +689,11 @@ def get_task(task_id: str, _auth: dict = Depends(require_user)):
     t = _get_task_by_id(task_id)
     if not t or t["user_id"] != _auth["id"]:
         return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
-    return {"ok": True, "task": t}
+    return {"ok": True, "task": _task_view(t)}
 
 
 @app.get("/api/download/{task_id}")
-def download_video(task_id: str, _auth: dict = Depends(require_user)):
+def download_video(task_id: str, _auth: dict = Depends(require_user_media)):
     t = _get_task_by_id(task_id)
     if not t or t["user_id"] != _auth["id"] or not t.get("local_video"):
         return JSONResponse({"ok": False, "error": "视频不存在"}, status_code=404)
@@ -964,7 +1010,7 @@ def admin_tasks(user_id: int = 0, _auth: dict = Depends(require_admin)):
             rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 1000").fetchall()
     finally:
         conn.close()
-    return {"ok": True, "tasks": [dict(r) for r in rows]}
+    return {"ok": True, "tasks": [_task_view(r, is_admin=True) for r in rows]}
 
 
 @app.post("/api/admin/tasks/{task_id}/keep")
@@ -1001,7 +1047,7 @@ def admin_delete_task(task_id: str = Form(...), _auth: dict = Depends(require_ad
 
 
 @app.get("/api/admin/download/{task_id}")
-def admin_download(task_id: str, _auth: dict = Depends(require_admin)):
+def admin_download(task_id: str, _auth: dict = Depends(require_admin_media)):
     t = _get_task_by_id(task_id)
     if not t or not t.get("local_video"):
         return JSONResponse({"ok": False, "error": "本地视频不存在"}, status_code=404)
