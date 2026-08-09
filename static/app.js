@@ -392,7 +392,7 @@ async function loadTasks() {
 }
 
 function statusLabel(s) {
-  const map = { pending: '排队中', running: '生成中', succeeded: '已完成', failed: '失败', error: '错误' };
+  const map = { pending: '排队中', running: '生成中', succeeded: '已完成', success: '已完成', completed: '已完成', failed: '失败', error: '错误' };
   return map[s] || s;
 }
 

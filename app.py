@@ -265,6 +265,12 @@ def require_admin_media(authorization: str | None = Header(None), token: str | N
 def _task_view(t, is_admin: bool = False) -> dict:
     """序列化任务：补充 video_play_url（本地文件存在则用本地下载接口，否则退回平台 URL）"""
     d = dict(t)
+    st = d.get("status") or "pending"
+    if st in ("success", "completed", "succeeded"):
+        st = "succeeded"
+    elif st in ("failed", "error"):
+        st = "failed"
+    d["status"] = st
     d["video_play_url"] = ""
     if d.get("local_video"):
         lpath = Path(d["local_video"])
@@ -850,12 +856,15 @@ def get_task(task_id: str, _auth: dict = Depends(require_user)):
 @app.get("/api/download/{task_id}")
 def download_video(task_id: str, _auth: dict = Depends(require_user_media)):
     t = _get_task_by_id(task_id)
-    if not t or t["user_id"] != _auth["id"] or not t.get("local_video"):
+    if not t or t["user_id"] != _auth["id"]:
         return JSONResponse({"ok": False, "error": "视频不存在"}, status_code=404)
-    path = Path(t["local_video"])
-    if not path.exists():
-        return JSONResponse({"ok": False, "error": "本地视频文件已清理"}, status_code=404)
-    return FileResponse(path, filename=f"{t['id']}.mp4")
+    path = Path(t["local_video"]) if t.get("local_video") else None
+    if path and path.exists():
+        return FileResponse(path, filename=f"{t['id']}.mp4")
+    if t.get("video_url"):
+        # 本地文件缺失（实例重启/清理）时退回平台地址
+        return RedirectResponse(t["video_url"])
+    return JSONResponse({"ok": False, "error": "视频文件已清理"}, status_code=404)
 
 
 @app.post("/api/upload")
@@ -1282,12 +1291,14 @@ def admin_delete_task(task_id: str = Form(...), _auth: dict = Depends(require_ad
 @app.get("/api/admin/download/{task_id}")
 def admin_download(task_id: str, _auth: dict = Depends(require_admin_media)):
     t = _get_task_by_id(task_id)
-    if not t or not t.get("local_video"):
-        return JSONResponse({"ok": False, "error": "本地视频不存在"}, status_code=404)
-    path = Path(t["local_video"])
-    if not path.exists():
-        return JSONResponse({"ok": False, "error": "本地视频文件已清理"}, status_code=404)
-    return FileResponse(path, filename=f"{t['id']}.mp4")
+    if not t:
+        return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
+    path = Path(t["local_video"]) if t.get("local_video") else None
+    if path and path.exists():
+        return FileResponse(path, filename=f"{t['id']}.mp4")
+    if t.get("video_url"):
+        return RedirectResponse(t["video_url"])
+    return JSONResponse({"ok": False, "error": "本地视频文件已清理"}, status_code=404)
 
 
 @app.get("/api/admin/features")
