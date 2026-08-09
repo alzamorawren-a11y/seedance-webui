@@ -1,6 +1,8 @@
 ﻿// Seedance WebUI 用户端逻辑
 let MODELS = [];
-let MATERIALS = [];
+let IMG_MATS = []; // 图片参考区
+let VID_MATS = []; // 视频参考区
+let AUD_MATS = []; // 音频参考区
 let FIRST_FRAME = null;
 let LAST_FRAME = null;
 let MODE = 'text';
@@ -153,7 +155,7 @@ function setMode(m) {
   $('tab-text').className = 'tab' + (m === 'text' ? ' active' : '');
   $('tab-multi').className = 'tab' + (m === 'multi' ? ' active' : '');
   $('tab-fl').className = 'tab' + (m === 'first_last' ? ' active' : '');
-  $('materials').style.display = m === 'multi' ? 'block' : 'none';
+  $('materials').style.display = (m === 'multi' || m === 'first_last') ? 'block' : 'none';
   $('fl-frame').style.display = m === 'first_last' ? 'flex' : 'none';
   updateCost();
 }
@@ -198,14 +200,30 @@ function updateCost() {
 $('model').addEventListener('change', () => { updateCost(); });
 $('duration').addEventListener('change', updateCost);
 
-// ---------- 多模态素材 ----------
-function addMaterialUrl() {
-  const url = $('mat-url').value.trim();
+// ---------- 多模态素材：三个独立参考区（图片 @图 / 视频 @视 / 音频 @音） ----------
+function zoneMeta(type) {
+  if (type === 'image') return { tag: '图', list: IMG_MATS, urlId: 'img-url', listId: 'img-list', icon: '🖼️' };
+  if (type === 'video') return { tag: '视', list: VID_MATS, urlId: 'vid-url', listId: 'vid-list', icon: '🎞️' };
+  return { tag: '音', list: AUD_MATS, urlId: 'aud-url', listId: 'aud-list', icon: '🔊' };
+}
+function allMaterials() {
+  return [
+    ...IMG_MATS.map(m => ({ url: m.url, type: 'image', name: m.name })),
+    ...VID_MATS.map(m => ({ url: m.url, type: 'video', name: m.name })),
+    ...AUD_MATS.map(m => ({ url: m.url, type: 'audio', name: m.name })),
+  ];
+}
+function countMaterials() { return IMG_MATS.length + VID_MATS.length + AUD_MATS.length; }
+
+function addMaterialUrl(type) {
+  const z = zoneMeta(type);
+  const input = $(z.urlId);
+  const url = input.value.trim();
   if (!url) return;
   if (!/^https?:\/\//i.test(url)) { toast('请输入以 http(s):// 开头的 URL', false); return; }
-  MATERIALS.push({ url, type: $('mat-type').value || 'image', kind: 'url', name: url });
-  $('mat-url').value = '';
-  renderMaterials();
+  z.list.push({ url, kind: 'url', name: url });
+  input.value = '';
+  renderMaterials(type);
 }
 
 async function uploadMaterial(input, type) {
@@ -215,30 +233,43 @@ async function uploadMaterial(input, type) {
   fd.append('file', file);
   try {
     const d = await apiJson('/api/upload', { method: 'POST', body: fd });
-    MATERIALS.push({ url: d.url, type: d.type || type || 'image', kind: 'upload', name: file.name });
+    const z = zoneMeta(type);
+    z.list.push({ url: d.url, kind: 'upload', name: file.name });
     toast('已上传素材');
-    renderMaterials();
+    renderMaterials(type);
   } catch (e) {
     toast('上传失败: ' + e.message, false);
   }
   input.value = '';
 }
 
-function removeMaterial(i) { MATERIALS.splice(i, 1); renderMaterials(); }
+function removeMaterial(type, i) {
+  const z = zoneMeta(type);
+  z.list.splice(i, 1);
+  renderMaterials(type);
+}
 
-function renderMaterials() {
-  const box = $('mat-list');
+function insertMaterialRef(type, i) {
+  const z = zoneMeta(type);
+  const ref = '@' + z.tag + (i + 1);
+  const ta = $('prompt');
+  ta.value = (ta.value + ' ' + ref).trim();
+  ta.focus();
+  toast('已插入 ' + ref + '，生成时将真实参考该素材');
+}
+
+function renderMaterials(type) {
+  const z = zoneMeta(type);
+  const box = $(z.listId);
   box.innerHTML = '';
-  MATERIALS.forEach((m, i) => {
+  z.list.forEach((m, i) => {
     const div = document.createElement('div');
     div.className = 'mat-item';
-    const TYPE_ICON = { image: '🖼️', video: '🎞️', audio: '🔊' };
-    const ic = TYPE_ICON[m.type] || '📎';
-    const isImg = m.type === 'image';
-    div.innerHTML = `<span class="idx">${i + 1}</span>${isImg ? `<img src="${m.url}" alt="">` : `<span>${ic}</span>`}<span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.name}</span><button title="在提示词中引用 @${i + 1}" onclick="insertMaterialRef(${i})">@</button><button onclick="removeMaterial(${i})">✕</button>`;
+    const isImg = type === 'image';
+    div.innerHTML = `<span class="idx">${z.tag}${i + 1}</span>${isImg ? `<img src="${m.url}" alt="">` : `<span>${z.icon}</span>`}<span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.name}</span><button title="在提示词中引用 @${z.tag}${i + 1}" onclick="insertMaterialRef('${type}',${i})">@</button><button onclick="removeMaterial('${type}',${i})">✕</button>`;
     box.appendChild(div);
   });
-  if (!MATERIALS.length) box.innerHTML = '<span class="hint">尚未添加素材</span>';
+  if (!z.list.length) box.innerHTML = '<span class="hint">尚未添加素材</span>';
 }
 
 // ---------- 首尾帧 ----------
@@ -309,7 +340,8 @@ async function generate() {
     toast('首尾帧模式请至少设置一张图片', false);
     return;
   }
-  if (MODE === 'multi' && !MATERIALS.length) {
+  const mats = allMaterials();
+  if (MODE === 'multi' && !mats.length) {
     if (!confirm('当前为多模态模式但没有素材，将按文生视频生成，确定？')) return;
   }
   const prompt = expandPrompt().trim();
@@ -328,7 +360,7 @@ async function generate() {
   fd.append('duration', $('duration').value);
   fd.append('ratio', $('ratio').value);
   fd.append('mode', MODE);
-  fd.append('materials', JSON.stringify(MATERIALS.map(m => ({ url: m.url, type: m.type, name: m.name }))));
+  fd.append('materials', JSON.stringify(mats));
   fd.append('first_frame', FIRST_FRAME || '');
   fd.append('last_frame', LAST_FRAME || '');
   $('gen-btn').disabled = true;
@@ -337,7 +369,8 @@ async function generate() {
     const d = await apiJson('/api/generate', { method: 'POST', body: fd });
     toast('任务已提交 ✅');
     $('prompt').value = '';
-    MATERIALS = []; renderMaterials();
+    IMG_MATS = []; VID_MATS = []; AUD_MATS = [];
+    renderMaterials('image'); renderMaterials('video'); renderMaterials('audio');
     FIRST_FRAME = null; LAST_FRAME = null; renderFrames();
     await loadMe();
     await loadTasks();
@@ -437,18 +470,11 @@ function renderTasks(tasks) {
 }
 
 
-// ---------- 提示词 @ 引用素材 ----------
-function insertMaterialRef(i) {
-  const ta = $('prompt');
-  ta.value = (ta.value + ' @' + (i + 1)).trim();
-  ta.focus();
-  toast('已插入 @' + (i + 1) + '，发送时将引用该素材');
-}
-
+// ---------- 提示词 @ 引用素材（@图N/@视N/@音N） ----------
 $('prompt').addEventListener('keyup', (e) => {
   const pos = e.target.selectionStart;
   const val = e.target.value;
-  if (val[pos - 1] === '@' && MATERIALS.length) showAtPicker(pos, val);
+  if (val[pos - 1] === '@' && countMaterials()) showAtPicker(pos, val);
   else hideAtPicker();
 });
 $('prompt').addEventListener('click', () => { hideAtPicker(); });
@@ -457,18 +483,22 @@ $('prompt').addEventListener('blur', () => setTimeout(hideAtPicker, 200));
 function showAtPicker(pos, val) {
   const box = $('at-picker');
   box.innerHTML = '';
-  MATERIALS.forEach((m, i) => {
-    const isImg = /\.(png|jpe?g|webp|gif|bmp)(\?|$)/i.test(m.url);
-    const item = document.createElement('div');
-    item.className = 'ap-item';
-    item.innerHTML = `<span class="idx">${i + 1}</span>${isImg ? `<img src="${m.url}" alt="">` : '<span>📎</span>'}<span>引用这张素材</span>`;
-    item.addEventListener('click', () => {
-      const ta = $('prompt');
-      ta.value = val.substring(0, pos - 1) + '@' + (i + 1) + val.substring(pos);
-      ta.focus();
-      hideAtPicker();
+  const groups = [['image', '图片'], ['video', '视频'], ['audio', '音频']];
+  groups.forEach(([type, label]) => {
+    const z = zoneMeta(type);
+    z.list.forEach((m, i) => {
+      const item = document.createElement('div');
+      item.className = 'ap-item';
+      const isImg = type === 'image';
+      item.innerHTML = `<span class="idx">${z.tag}${i + 1}</span>${isImg ? `<img src="${m.url}" alt="">` : `<span>${z.icon}</span>`}<span>${label}参考 ${m.name || ''}</span>`;
+      item.addEventListener('click', () => {
+        const ta = $('prompt');
+        ta.value = val.substring(0, pos - 1) + '@' + z.tag + (i + 1) + val.substring(pos);
+        ta.focus();
+        hideAtPicker();
+      });
+      box.appendChild(item);
     });
-    box.appendChild(item);
   });
   box.style.display = 'block';
 }

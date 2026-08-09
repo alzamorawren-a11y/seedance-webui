@@ -37,6 +37,10 @@ textarea { resize:vertical; min-height:96px; line-height:1.6; }
 .materials { margin-top:10px; }
 .mat-input { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
 .mat-input input { flex:1; min-width:160px; }
+.ref-zone { border:1px solid var(--line); border-radius:10px; padding:12px 12px 6px; margin-bottom:12px; background:var(--card2); }
+.ref-zone-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.ref-zone-title { font-size:14px; font-weight:600; }
+.ref-zone-num { font-size:12px; color:var(--muted); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:2px 8px; }
 .mat-list { display:flex; flex-wrap:wrap; gap:8px; }
 .mat-item { background:var(--card2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:13px; display:flex; align-items:center; gap:8px; }
 .mat-item img { width:44px; height:44px; object-fit:cover; border-radius:6px; }
@@ -141,30 +145,44 @@ footer { margin-top:20px; text-align:center; color:var(--muted); font-size:12px;
     <div class="row">
       <label style="align-self:flex-start">提示词</label>
       <div style="flex:1;position:relative">
-        <textarea id="prompt" placeholder="描述你想生成的视频内容… 上传素材后输入 @ 可引用图片"></textarea>
+        <textarea id="prompt" placeholder="描述你想生成的视频内容… 上传素材后输入 @图1/@视1/@音1 引用对应素材"></textarea>
         <div class="at-picker" id="at-picker" style="display:none"></div>
       </div>
     </div>
 
-    <!-- 多模态参考素材 -->
+    <!-- 多模态参考素材：三个独立参考区 -->
     <div class="materials" id="materials" style="display:none">
-      <div class="mat-input">
-        <select id="mat-type" style="width:88px;flex:0 0 auto">
-          <option value="image">图片</option>
-          <option value="video">视频</option>
-          <option value="audio">音频</option>
-        </select>
-        <input type="text" id="mat-url" placeholder="粘贴公网 URL（或直接上传）">
-        <button class="btn" onclick="addMaterialUrl()">添加</button>
-        <button class="btn" id="mat-upload-img" onclick="document.getElementById('mat-file-img').click()">上传图片</button>
-        <button class="btn" id="mat-upload-video" onclick="document.getElementById('mat-file-video').click()">上传视频</button>
-        <button class="btn" id="mat-upload-audio" onclick="document.getElementById('mat-file-audio').click()">上传音频</button>
-        <input type="file" id="mat-file-img" accept="image/*" style="display:none" onchange="uploadMaterial(this,'image')">
-        <input type="file" id="mat-file-video" accept="video/*,video/mp4,.mp4,.mov,.webm,.avi,.mkv,.m4v" style="display:none" onchange="uploadMaterial(this,'video')">
-        <input type="file" id="mat-file-audio" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus" style="display:none" onchange="uploadMaterial(this,'audio')">
+      <div class="ref-zone">
+        <div class="ref-zone-head"><span class="ref-zone-title">🖼️ 图片参考区</span><span class="ref-zone-num">@图1 @图2…</span></div>
+        <div class="mat-input">
+          <input type="text" id="img-url" placeholder="粘贴公网图片 URL（或直接上传）">
+          <button class="btn" onclick="addMaterialUrl('image')">添加</button>
+          <button class="btn" id="mat-upload-img" onclick="document.getElementById('mat-file-img').click()">上传图片</button>
+          <input type="file" id="mat-file-img" accept="image/*" style="display:none" onchange="uploadMaterial(this,'image')">
+        </div>
+        <div class="mat-list" id="img-list"></div>
       </div>
-      <div class="mat-list" id="mat-list"></div>
-      <div class="hint">💡 素材自动编号为 @1、@2…，在提示词里写 @1 即可引用该素材（图片/视频/音频都支持）。<br>⚠️ 平台需要能访问素材 URL：公网部署会自动使用本站公网地址；本地测试请在管理端配置「公网访问地址」。</div>
+      <div class="ref-zone">
+        <div class="ref-zone-head"><span class="ref-zone-title">🎞️ 视频参考区</span><span class="ref-zone-num">@视1 @视2…</span></div>
+        <div class="mat-input">
+          <input type="text" id="vid-url" placeholder="粘贴公网视频 URL（或直接上传）">
+          <button class="btn" onclick="addMaterialUrl('video')">添加</button>
+          <button class="btn" id="mat-upload-video" onclick="document.getElementById('mat-file-video').click()">上传视频</button>
+          <input type="file" id="mat-file-video" accept="video/*,video/mp4,.mp4,.mov,.webm,.avi,.mkv,.m4v" style="display:none" onchange="uploadMaterial(this,'video')">
+        </div>
+        <div class="mat-list" id="vid-list"></div>
+      </div>
+      <div class="ref-zone">
+        <div class="ref-zone-head"><span class="ref-zone-title">🔊 音频参考区</span><span class="ref-zone-num">@音1 @音2…</span></div>
+        <div class="mat-input">
+          <input type="text" id="aud-url" placeholder="粘贴公网音频 URL（或直接上传）">
+          <button class="btn" onclick="addMaterialUrl('audio')">添加</button>
+          <button class="btn" id="mat-upload-audio" onclick="document.getElementById('mat-file-audio').click()">上传音频</button>
+          <input type="file" id="mat-file-audio" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus" style="display:none" onchange="uploadMaterial(this,'audio')">
+        </div>
+        <div class="mat-list" id="aud-list"></div>
+      </div>
+      <div class="hint">💡 三个参考区互相独立、各自编号：图片用 <b>@图1</b>、视频用 <b>@视1</b>、音频用 <b>@音1</b> 在提示词中引用，模型会真实参考对应素材生成内容。<br>⚠️ 平台需要能访问素材 URL：公网部署会自动使用本站公网地址；本地测试请在管理端配置「公网访问地址」。</div>
     </div>
 
     <!-- 首尾帧 -->
@@ -185,7 +203,7 @@ footer { margin-top:20px; text-align:center; color:var(--muted); font-size:12px;
         </div>
         <div class="mat-list" id="fl-last-list"></div>
       </div>
-      <div class="hint" style="flex-basis:100%">💡 首尾帧模式下，生成的视频将从首帧画面过渡到尾帧画面。两张图片会以 @ 引用自动附加到提示词中。</div>
+      <div class="hint" style="flex-basis:100%">💡 首尾帧模式下，生成的视频将从首帧画面过渡到尾帧画面；也可以在上方三个参考区上传素材并用 @图1/@视1/@音1 引用，模型会一并参考。</div>
     </div>
 
     <div class="row" style="margin-top:14px">

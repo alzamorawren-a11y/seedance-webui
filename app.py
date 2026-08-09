@@ -346,23 +346,38 @@ def _parse_materials(raw: str):
     return out
 
 
-def _resolve_refs(prompt: str, materials: list) -> tuple:
-    """把提示词里的 @N 标记映射到素材列表。
+_ZONE_TAG = {"图": "image", "视": "video", "音": "audio"}
 
+
+def _resolve_refs(prompt: str, materials: list) -> tuple:
+    """把提示词里的 @N / @图N / @视N / @音N 标记映射到素材列表。
+
+    @N 按上传顺序引用（兼容旧式）；@图N/@视N/@音N 按三个参考区（图片/视频/音频）独立编号引用。
     返回 (清理后的提示词, 被引用的素材列表)。
     """
     import re
+    zones = {"image": [], "video": [], "audio": []}
+    for m in materials:
+        if m.get("type") in zones:
+            zones[m["type"]].append(m)
     used = set()
 
     def repl(m):
-        n = int(m.group(1)) - 1
+        tag = m.group(1)
+        n = int(m.group(2)) - 1
+        if tag is not None:
+            t = _ZONE_TAG.get(tag)
+            if t is not None and 0 <= n < len(zones[t]):
+                used.add(id(zones[t][n]))
+                return ""
+            return m.group(0)
         if 0 <= n < len(materials):
-            used.add(n)
+            used.add(id(materials[n]))
             return ""
         return m.group(0)
 
-    cleaned = re.sub(r"@(\d+)", repl, prompt or "")
-    refs = [materials[n] for n in sorted(used)]
+    cleaned = re.sub(r"@([图视音])?(\d+)", repl, prompt or "")
+    refs = [m for m in materials if id(m) in used]
     return cleaned, refs
 
 
@@ -716,11 +731,11 @@ def generate(model: str = Form(...), prompt: str = Form(...), duration: str = Fo
     cleaned_prompt, refs = _resolve_refs(prompt, mats)
     if not cleaned_prompt:
         return JSONResponse({"ok": False, "error": "提示词不能为空"}, status_code=400)
-    leftover = re.search(r"@\d+", cleaned_prompt or "")
+    leftover = re.search(r"@[图视音]?\d+", cleaned_prompt or "")
     if leftover:
         return JSONResponse({"ok": False, "error": f"提示词中的 {leftover.group(0)} 引用了不存在的素材，请检查编号"}, status_code=400)
     if mode == "multi" and mats and not refs:
-        return JSONResponse({"ok": False, "error": "请在提示词中用 @1/@2... 引用已上传的素材，模型才能参考它们"}, status_code=400)
+        return JSONResponse({"ok": False, "error": "请在提示词中用 @图1/@视1/@音1 引用已上传的素材，模型才能参考它们"}, status_code=400)
     if mode == "first_last" and not first_frame and not last_frame:
         return JSONResponse({"ok": False, "error": "请至少上传首帧或尾帧图片"}, status_code=400)
     key = _get_platform_key()
@@ -748,24 +763,21 @@ def generate(model: str = Form(...), prompt: str = Form(...), duration: str = Fo
         if not _freeze_points(user["id"], cost, local_id, "生成视频：" + model + " x " + duration):
             bal = float(user["points"])
             return JSONResponse({"ok": False, "error": "积分不足：本次需要 " + str(cost) + " 积分，当前剩余 " + str(bal) + " 积分"}, status_code=402)
-        # 构造平台 assets（公网 URL）
+        # 构造平台 assets（公网 URL）：首尾帧在前，随后按引用顺序附加参考素材
         assets = []
-        if mode == "multi":
-            for m in refs:
-                url = _abs_url(request, m["url"])
-                if m["type"] == "image":
-                    assets.append({"url": url, "type": "image", "role": "reference"})
-                elif m["type"] == "video":
-                    assets.append({"url": url, "type": "video", "role": "reference"})
-                elif m["type"] == "audio":
-                    assets.append({"url": url, "type": "audio", "role": "audio"})
-            if assets:
-                pass  # 下面统一设置 referenceMode
-        elif mode == "first_last":
+        if mode == "first_last":
             if first_frame:
                 assets.append({"url": _abs_url(request, first_frame), "type": "image", "role": "first_frame"})
             if last_frame:
                 assets.append({"url": _abs_url(request, last_frame), "type": "image", "role": "last_frame"})
+        for m in refs:
+            url = _abs_url(request, m["url"])
+            if m["type"] == "image":
+                assets.append({"url": url, "type": "image", "role": "reference"})
+            elif m["type"] == "video":
+                assets.append({"url": url, "type": "video", "role": "reference"})
+            elif m["type"] == "audio":
+                assets.append({"url": url, "type": "audio", "role": "audio"})
         assets_json = json.dumps(assets, ensure_ascii=False) if assets else ""
         conn = get_db()
         try:
@@ -786,7 +798,7 @@ def generate(model: str = Form(...), prompt: str = Form(...), duration: str = Fo
         body["aspect_ratio"] = ratio
     if mode == "multi" and assets:
         body["referenceMode"] = "multimodal"
-        body["modeType"] = "image2video"
+        body["modeType"] = "image2video" if any(a["type"] == "image" for a in assets) else "text2video"
         body["assets"] = assets
     elif mode == "first_last" and assets:
         body["referenceMode"] = "first_last_frame"
